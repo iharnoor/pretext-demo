@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pretext Demo - DOM-Free Text Measurement</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #8b8d98;
+      --accent: #6d5dfc;
+      --accent-dim: #6d5dfc33;
+      --green: #34d399;
+      --red: #f87171;
+      --orange: #fb923c;
+      --font: "Inter", system-ui, -apple-system, sans-serif;
+      --mono: "JetBrains Mono", "Fira Code", monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.25rem;
+    }
+
+    h1 span { color: var(--accent); }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1.05rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .subtitle a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    h2 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    h2 .badge {
+      font-size: 0.65rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .description {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    canvas {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: block;
+      margin: 0.75rem 0;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 0.75rem 0;
+      flex-wrap: wrap;
+    }
+
+    .controls label {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      accent-color: var(--accent);
+      width: 200px;
+    }
+
+    input[type="text"], textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.9rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      width: 100%;
+    }
+
+    textarea { resize: vertical; min-height: 60px; }
+
+    .stats {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .fast { color: var(--green); }
+    .slow { color: var(--red); }
+    .mid { color: var(--orange); }
+
+    .perf-bar-container {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.25rem 0;
+    }
+
+    .perf-bar-label {
+      font-size: 0.85rem;
+      width: 120px;
+      text-align: right;
+      color: var(--muted);
+    }
+
+    .perf-bar-track {
+      flex: 1;
+      height: 28px;
+      background: var(--bg);
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .perf-bar {
+      height: 100%;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      padding-left: 0.75rem;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: width 0.4s ease;
+    }
+
+    .perf-bar.dom-bar { background: var(--red); color: #fff; }
+    .perf-bar.pretext-bar { background: var(--green); color: #0f1117; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      font-family: var(--font);
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    button:hover { opacity: 0.85; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 700px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .line-viz {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.8;
+      padding: 0.75rem;
+      background: var(--bg);
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+
+    .line-viz .line-num {
+      color: var(--muted);
+      user-select: none;
+      margin-right: 0.75rem;
+      display: inline-block;
+      width: 1.5em;
+      text-align: right;
+    }
+
+    .line-viz .line-text { color: var(--text); }
+    .line-viz .line-width { color: var(--accent); margin-left: 0.5rem; font-size: 0.75rem; }
+
+    .chip-preview {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 1rem;
+      margin-top: 0.75rem;
+      min-height: 80px;
+    }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    #error-banner {
+      display: none;
+      background: #f8717133;
+      border: 1px solid var(--red);
+      color: var(--red);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <h1><span>pretext</span> demo</h1>
+  <p class="subtitle">
+    DOM-free text measurement &amp; layout by
+    <a href="https://github.com/chenglou/pretext" target="_blank">@chenglou/pretext</a>
+  </p>
+
+  <div id="error-banner"></div>
+
+  <!-- Demo 1: Basic Measurement -->
+  <div class="card" id="demo-measure">
+    <h2>1. Instant Text Measurement <span class="badge">prepare + layout</span></h2>
+    <p class="description">
+      Type text and drag the width slider. <code>prepare()</code> measures once via canvas;
+      <code>layout()</code> recalculates height with pure arithmetic on every resize — no DOM reflows.
+    </p>
+    <textarea id="measure-input" rows="2">AGI spring is here! Pretext measures this text without ever touching the DOM. Resize the width to see instant height recalculation. 🚀</textarea>
+    <div class="controls">
+      <label>Max width: <strong id="measure-width-val">350</strong>px</label>
+      <input type="range" id="measure-width" min="100" max="700" value="350" />
+      <label>Line height: <strong id="measure-lh-val">24</strong>px</label>
+      <input type="range" id="measure-lh" min="16" max="48" value="24" />
+    </div>
+    <canvas id="measure-canvas" width="700" height="200"></canvas>
+    <div class="stats" id="measure-stats"></div>
+  </div>
+
+  <!-- Demo 2: Canvas Line Rendering -->
+  <div class="card" id="demo-lines">
+    <h2>2. Manual Line Layout <span class="badge">layoutWithLines</span></h2>
+    <p class="description">
+      Get back individual lines with their text, width, and cursor positions —
+      perfect for rendering text on Canvas or SVG without the DOM.
+    </p>
+    <textarea id="lines-input" rows="2">Pretext gives you full control over each line. You can render them anywhere — on a canvas, in SVG, or even a game engine. Each line knows its exact pixel width.</textarea>
+    <div class="controls">
+      <label>Max width: <strong id="lines-width-val">400</strong>px</label>
+      <input type="range" id="lines-width" min="120" max="700" value="400" />
+    </div>
+    <canvas id="lines-canvas" width="700" height="250"></canvas>
+    <div class="line-viz" id="lines-detail"></div>
+  </div>
+
+  <!-- Demo 3: Variable Width Wrapping -->
+  <div class="card" id="demo-variable">
+    <h2>3. Variable-Width Wrapping <span class="badge">layoutNextLine</span></h2>
+    <p class="description">
+      Use <code>layoutNextLine()</code> to wrap text around obstacles — each line can have a different
+      available width. Here, text wraps around a floating "image".
+    </p>
+    <canvas id="variable-canvas" width="700" height="320"></canvas>
+    <div class="controls">
+      <label>Obstacle size: <strong id="obstacle-val">150</strong>px</label>
+      <input type="range" id="obstacle-size" min="60" max="280" value="150" />
+    </div>
+  </div>
+
+  <!-- Demo 4: Inline Flow -->
+  <div class="card" id="demo-inline">
+    <h2>4. Inline Flow — Mixed Fonts &amp; Chips <span class="badge">experimental</span></h2>
+    <p class="description">
+      The inline flow module handles rich text with different fonts and atomic "chip" elements
+      that never break mid-word, like tag pills in an editor.
+    </p>
+    <canvas id="inline-canvas" width="700" height="200"></canvas>
+    <div class="controls">
+      <label>Max width: <strong id="inline-width-val">500</strong>px</label>
+      <input type="range" id="inline-width" min="200" max="700" value="500" />
+    </div>
+  </div>
+
+  <!-- Demo 5: Performance -->
+  <div class="card" id="demo-perf">
+    <h2>5. Performance Comparison <span class="badge">DOM vs pretext</span></h2>
+    <p class="description">
+      Measuring 500 text blocks: DOM uses <code>getBoundingClientRect()</code> (triggers reflow each time),
+      while pretext uses <code>prepare()</code> once then <code>layout()</code> for pure math.
+    </p>
+    <button id="perf-run">Run Benchmark</button>
+    <div style="margin-top: 1rem;">
+      <div class="perf-bar-container">
+        <span class="perf-bar-label">DOM reflow</span>
+        <div class="perf-bar-track">
+          <div class="perf-bar dom-bar" id="perf-dom-bar" style="width: 0%"></div>
+        </div>
+        <span class="stat-value slow" id="perf-dom-val">—</span>
+      </div>
+      <div class="perf-bar-container">
+        <span class="perf-bar-label">pretext layout()</span>
+        <div class="perf-bar-track">
+          <div class="perf-bar pretext-bar" id="perf-pt-bar" style="width: 0%"></div>
+        </div>
+        <span class="stat-value fast" id="perf-pt-val">—</span>
+      </div>
+    </div>
+    <div class="stats" id="perf-stats" style="margin-top: 1rem;"></div>
+  </div>
+
+  <!-- Hidden DOM measurement helper -->
+  <div id="dom-measure-helper" style="position:absolute;top:-9999px;left:-9999px;visibility:hidden;"></div>
+
+  <script type="module">
+    // ── Import pretext from esm.sh CDN ──
+    let pretext, inlineFlow;
+    const errorBanner = document.getElementById('error-banner');
+
+    try {
+      pretext = await import('https://esm.sh/@chenglou/pretext');
+      try {
+        inlineFlow = await import('https://esm.sh/@chenglou/pretext/inline-flow');
+      } catch (e) {
+        console.warn('Inline flow module not available, demo 4 will be limited:', e);
+      }
+    } catch (e) {
+      errorBanner.style.display = 'block';
+      errorBanner.textContent = `Failed to load @chenglou/pretext: ${e.message}. Make sure you have internet access.`;
+      throw e;
+    }
+
+    const {
+      prepare,
+      layout,
+      prepareWithSegments,
+      layoutWithLines,
+      layoutNextLine,
+      measureNaturalWidth,
+    } = pretext;
+
+    const FONT = '16px Inter, system-ui, sans-serif';
+    const BOLD_FONT = 'bold 16px Inter, system-ui, sans-serif';
+    const ITALIC_FONT = 'italic 16px Inter, system-ui, sans-serif';
+    const LINE_HEIGHT = 24;
+    const PAD = 16;
+
+    // ── Helpers ──
+    function $(id) { return document.getElementById(id); }
+    function ctx(id) { return $(id).getContext('2d'); }
+
+    function clearCanvas(canvasId, w, h) {
+      const c = $(canvasId);
+      const dpr = window.devicePixelRatio || 1;
+      c.width = w * dpr;
+      c.height = h * dpr;
+      c.style.width = w + 'px';
+      c.style.height = h + 'px';
+      const context = c.getContext('2d');
+      context.scale(dpr, dpr);
+      context.clearRect(0, 0, w, h);
+      return context;
+    }
+
+    // ══════════════════════════════════════════════
+    //  DEMO 1: Basic Measurement
+    // ══════════════════════════════════════════════
+    function runDemo1() {
+      const text = $('measure-input').value;
+      const maxWidth = +$('measure-width').value;
+      const lh = +$('measure-lh').value;
+      $('measure-width-val').textContent = maxWidth;
+      $('measure-lh-val').textContent = lh;
+
+      const t0 = performance.now();
+      const prepared = prepare(text, FONT);
+      const prepTime = performance.now() - t0;
+
+      const t1 = performance.now();
+      const result = layout(prepared, maxWidth, lh);
+      const layoutTime = performance.now() - t1;
+
+      // Draw visualization
+      const canvasW = 700;
+      const canvasH = Math.max(result.height + PAD * 2 + 10, 80);
+      const c = clearCanvas('measure-canvas', canvasW, canvasH);
+
+      // Draw max-width boundary
+      c.strokeStyle = '#6d5dfc55';
+      c.lineWidth = 1;
+      c.setLineDash([4, 4]);
+      c.strokeRect(PAD, PAD, maxWidth, result.height);
+      c.setLineDash([]);
+
+      // Draw text using layoutWithLines for visual
+      const prepSeg = prepareWithSegments(text, FONT);
+      const linesResult = layoutWithLines(prepSeg, maxWidth, lh);
+      c.font = FONT;
+      c.fillStyle = '#e4e4e7';
+      c.textBaseline = 'top';
+      linesResult.lines.forEach((line, i) => {
+        c.fillText(line.text, PAD, PAD + i * lh);
+      });
+
+      // Dimension annotation
+      c.fillStyle = '#6d5dfc';
+      c.font = '12px ' + 'Inter, system-ui, sans-serif';
+      c.fillText(`${maxWidth}px`, PAD + maxWidth / 2 - 15, PAD + result.height + 4);
+      c.save();
+      c.translate(PAD + maxWidth + 8, PAD + result.height / 2 + 20);
+      c.rotate(-Math.PI / 2);
+      c.fillText(`${result.height}px`, 0, 0);
+      c.restore();
+
+      // Stats
+      $('measure-stats').innerHTML = `
+        <div class="stat"><span class="stat-value">${result.lineCount}</span><span class="stat-label">Lines</span></div>
+        <div class="stat"><span class="stat-value">${result.height}px</span><span class="stat-label">Height</span></div>
+        <div class="stat"><span class="stat-value fast">${prepTime.toFixed(2)}ms</span><span class="stat-label">prepare()</span></div>
+        <div class="stat"><span class="stat-value fast">${layoutTime.toFixed(3)}ms</span><span class="stat-label">layout()</span></div>
+      `;
+    }
+
+    $('measure-input').addEventListener('input', runDemo1);
+    $('measure-width').addEventListener('input', runDemo1);
+    $('measure-lh').addEventListener('input', runDemo1);
+    runDemo1();
+
+    // ══════════════════════════════════════════════
+    //  DEMO 2: Manual Line Layout
+    // ══════════════════════════════════════════════
+    function runDemo2() {
+      const text = $('lines-input').value;
+      const maxWidth = +$('lines-width').value;
+      $('lines-width-val').textContent = maxWidth;
+
+      const prepared = prepareWithSegments(text, FONT);
+      const result = layoutWithLines(prepared, maxWidth, LINE_HEIGHT);
+
+      const canvasH = Math.max(result.lines.length * LINE_HEIGHT + PAD * 2, 80);
+      const c = clearCanvas('lines-canvas', 700, canvasH);
+
+      // Draw each line with colored underline showing width
+      c.textBaseline = 'top';
+      const colors = ['#6d5dfc', '#34d399', '#fb923c', '#f87171', '#60a5fa', '#c084fc'];
+
+      result.lines.forEach((line, i) => {
+        const y = PAD + i * LINE_HEIGHT;
+        const color = colors[i % colors.length];
+
+        // Width underline
+        c.fillStyle = color + '22';
+        c.fillRect(PAD, y, line.width, LINE_HEIGHT);
+        c.strokeStyle = color;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.moveTo(PAD, y + LINE_HEIGHT - 1);
+        c.lineTo(PAD + line.width, y + LINE_HEIGHT - 1);
+        c.stroke();
+
+        // Text
+        c.font = FONT;
+        c.fillStyle = '#e4e4e7';
+        c.fillText(line.text, PAD, y + 2);
+
+        // Width label
+        c.font = '11px ' + 'Inter, system-ui, sans-serif';
+        c.fillStyle = color;
+        c.fillText(`${line.width.toFixed(1)}px`, PAD + line.width + 8, y + 4);
+      });
+
+      // Max width marker
+      c.strokeStyle = '#ffffff33';
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.moveTo(PAD + maxWidth, 0);
+      c.lineTo(PAD + maxWidth, canvasH);
+      c.stroke();
+      c.setLineDash([]);
+
+      // Line detail panel
+      $('lines-detail').innerHTML = result.lines.map((line, i) =>
+        `<div><span class="line-num">${i + 1}</span><span class="line-text">${escHtml(line.text)}</span><span class="line-width">${line.width.toFixed(1)}px</span></div>`
+      ).join('');
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    $('lines-input').addEventListener('input', runDemo2);
+    $('lines-width').addEventListener('input', runDemo2);
+    runDemo2();
+
+    // ══════════════════════════════════════════════
+    //  DEMO 3: Variable-Width Wrapping
+    // ══════════════════════════════════════════════
+    const WRAP_TEXT = "Pretext's layoutNextLine() lets each line have a different available width. This is perfect for wrapping text around floating images, pull quotes, or any irregular shape. Traditional CSS can only do simple float wrapping, but pretext gives you pixel-perfect control. Here the text flows around a purple box as if it were a floating image — each line's max width is reduced where the obstacle is. This is pure arithmetic after the initial prepare() call, making it extremely fast even for complex layouts with many obstacles.";
+
+    function runDemo3() {
+      const obstacleSize = +$('obstacle-size').value;
+      $('obstacle-val').textContent = obstacleSize;
+
+      const totalWidth = 660;
+      const canvasH = 320;
+      const c = clearCanvas('variable-canvas', 700, canvasH);
+
+      const obstX = totalWidth - obstacleSize + PAD;
+      const obstY = PAD;
+      const obstH = obstacleSize;
+      const gap = 12;
+
+      // Draw obstacle
+      c.fillStyle = '#6d5dfc33';
+      c.strokeStyle = '#6d5dfc';
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.roundRect(obstX, obstY, obstacleSize, obstH, 8);
+      c.fill();
+      c.stroke();
+      c.fillStyle = '#6d5dfc';
+      c.font = '13px ' + 'Inter, system-ui, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText('obstacle', obstX + obstacleSize / 2, obstY + obstH / 2);
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+
+      // Layout with variable widths
+      const prepared = prepareWithSegments(WRAP_TEXT, FONT);
+      let cursor = 0;
+      let lineIdx = 0;
+      const lines = [];
+
+      while (cursor < WRAP_TEXT.length) {
+        const y = PAD + lineIdx * LINE_HEIGHT;
+        let lineMaxWidth;
+
+        // Reduce width for lines overlapping the obstacle
+        if (y + LINE_HEIGHT > obstY && y < obstY + obstH) {
+          lineMaxWidth = totalWidth - obstacleSize - gap;
+        } else {
+          lineMaxWidth = totalWidth;
+        }
+
+        const line = layoutNextLine(prepared, cursor, lineMaxWidth);
+        if (!line || line.end === cursor) break;
+
+        lines.push({ ...line, y, maxW: lineMaxWidth });
+        cursor = line.end;
+        lineIdx++;
+      }
+
+      // Draw lines
+      c.font = FONT;
+      c.fillStyle = '#e4e4e7';
+      lines.forEach((line) => {
+        c.fillText(line.text, PAD, line.y + 2);
+      });
+    }
+
+    $('obstacle-size').addEventListener('input', runDemo3);
+    runDemo3();
+
+    // ══════════════════════════════════════════════
+    //  DEMO 4: Inline Flow
+    // ══════════════════════════════════════════════
+    function runDemo4() {
+      const maxWidth = +$('inline-width').value;
+      $('inline-width-val').textContent = maxWidth;
+
+      const c = clearCanvas('inline-canvas', 700, 200);
+
+      if (!inlineFlow) {
+        // Fallback: show mixed-font text using regular pretext
+        c.fillStyle = '#8b8d98';
+        c.font = '14px Inter, system-ui, sans-serif';
+        c.fillText('Inline flow module not available from CDN — showing fallback demo', PAD, PAD);
+
+        // Still demonstrate mixed fonts with manual layout
+        const segments = [
+          { text: 'Regular text, ', font: FONT },
+          { text: 'bold text, ', font: BOLD_FONT },
+          { text: 'italic text, ', font: ITALIC_FONT },
+          { text: 'and more regular text that wraps to show multi-line mixed-font rendering.', font: FONT },
+        ];
+
+        let x = PAD;
+        let y = PAD + 30;
+        segments.forEach(seg => {
+          c.font = seg.font;
+          c.fillStyle = seg.font.includes('bold') ? '#6d5dfc' : seg.font.includes('italic') ? '#34d399' : '#e4e4e7';
+          const m = c.measureText(seg.text);
+          if (x + m.width > PAD + maxWidth) {
+            x = PAD;
+            y += LINE_HEIGHT;
+          }
+          c.fillText(seg.text, x, y);
+          x += m.width;
+        });
+
+        // Draw max width line
+        c.strokeStyle = '#ffffff22';
+        c.setLineDash([3, 3]);
+        c.beginPath();
+        c.moveTo(PAD + maxWidth, 0);
+        c.lineTo(PAD + maxWidth, 200);
+        c.stroke();
+        return;
+      }
+
+      // Full inline flow demo
+      const { prepareInlineFlow, walkInlineFlowLines, measureInlineFlow } = inlineFlow;
+
+      const items = [
+        { text: 'Design systems need ', font: FONT },
+        { text: 'bold headings', font: BOLD_FONT },
+        { text: ' mixed with ', font: FONT },
+        { text: 'italic callouts', font: ITALIC_FONT },
+        { text: ' and atomic chips like ', font: FONT },
+        { text: ' @mention ', font: BOLD_FONT, break: 'never', extraWidth: 16 },
+        { text: ' or ', font: FONT },
+        { text: ' #tag ', font: BOLD_FONT, break: 'never', extraWidth: 16 },
+        { text: ' that never split across lines. Pretext handles all of this with pure math.', font: FONT },
+      ];
+
+      const prepared = prepareInlineFlow(items);
+      const result = measureInlineFlow(prepared, maxWidth, LINE_HEIGHT);
+
+      let y = PAD;
+      walkInlineFlowLines(prepared, maxWidth, (fragments) => {
+        let x = PAD;
+        fragments.forEach(frag => {
+          c.font = frag.font;
+          if (frag.break === 'never') {
+            // Chip style
+            c.fillStyle = '#6d5dfc33';
+            c.beginPath();
+            c.roundRect(x, y - 2, frag.width + 8, LINE_HEIGHT, 4);
+            c.fill();
+            c.fillStyle = '#6d5dfc';
+          } else if (frag.font.includes('bold')) {
+            c.fillStyle = '#6d5dfc';
+          } else if (frag.font.includes('italic')) {
+            c.fillStyle = '#34d399';
+          } else {
+            c.fillStyle = '#e4e4e7';
+          }
+          c.textBaseline = 'top';
+          c.fillText(frag.text, x, y);
+          x += frag.width;
+        });
+        y += LINE_HEIGHT;
+      });
+
+      // Max width line
+      c.strokeStyle = '#ffffff22';
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.moveTo(PAD + maxWidth, 0);
+      c.lineTo(PAD + maxWidth, 200);
+      c.stroke();
+    }
+
+    $('inline-width').addEventListener('input', runDemo4);
+    runDemo4();
+
+    // ══════════════════════════════════════════════
+    //  DEMO 5: Performance Benchmark
+    // ══════════════════════════════════════════════
+    $('perf-run').addEventListener('click', () => {
+      const btn = $('perf-run');
+      btn.disabled = true;
+      btn.textContent = 'Running...';
+
+      // Generate 500 random texts
+      const sampleTexts = [
+        "The quick brown fox jumps over the lazy dog.",
+        "Pack my box with five dozen liquor jugs.",
+        "How vexingly quick daft zebras jump!",
+        "Sphinx of black quartz, judge my vow.",
+        "Two driven jocks help fax my big quiz.",
+        "The five boxing wizards jump quickly at dawn.",
+        "Jackdaws love my big sphinx of quartz.",
+        "Crazy Frederick bought many very exquisite opal jewels.",
+      ];
+
+      const texts = Array.from({ length: 500 }, (_, i) => {
+        const base = sampleTexts[i % sampleTexts.length];
+        return base + ' ' + base.slice(0, Math.floor(Math.random() * base.length));
+      });
+
+      const widths = Array.from({ length: 500 }, () => 200 + Math.random() * 400);
+
+      // DOM measurement
+      const helper = $('dom-measure-helper');
+      helper.style.font = FONT;
+      helper.style.lineHeight = LINE_HEIGHT + 'px';
+      helper.style.whiteSpace = 'normal';
+      helper.style.wordBreak = 'normal';
+      helper.style.overflowWrap = 'break-word';
+
+      const domStart = performance.now();
+      for (let i = 0; i < 500; i++) {
+        helper.style.width = widths[i] + 'px';
+        helper.textContent = texts[i];
+        helper.getBoundingClientRect(); // force reflow
+      }
+      const domTime = performance.now() - domStart;
+
+      // Pretext measurement
+      const ptPrepStart = performance.now();
+      const prepared = texts.map(t => prepare(t, FONT));
+      const ptPrepTime = performance.now() - ptPrepStart;
+
+      const ptLayoutStart = performance.now();
+      for (let i = 0; i < 500; i++) {
+        layout(prepared[i], widths[i], LINE_HEIGHT);
+      }
+      const ptLayoutTime = performance.now() - ptLayoutStart;
+
+      const ptTotalTime = ptPrepTime + ptLayoutTime;
+
+      // Display results
+      const maxTime = Math.max(domTime, ptTotalTime);
+      $('perf-dom-bar').style.width = (domTime / maxTime * 100) + '%';
+      $('perf-pt-bar').style.width = (ptTotalTime / maxTime * 100) + '%';
+      $('perf-dom-val').textContent = domTime.toFixed(1) + 'ms';
+      $('perf-pt-val').textContent = ptTotalTime.toFixed(1) + 'ms';
+
+      const speedup = (domTime / ptTotalTime).toFixed(1);
+
+      $('perf-stats').innerHTML = `
+        <div class="stat"><span class="stat-value slow">${domTime.toFixed(1)}ms</span><span class="stat-label">DOM total</span></div>
+        <div class="stat"><span class="stat-value mid">${ptPrepTime.toFixed(1)}ms</span><span class="stat-label">prepare() (one-time)</span></div>
+        <div class="stat"><span class="stat-value fast">${ptLayoutTime.toFixed(2)}ms</span><span class="stat-label">layout() (re-usable)</span></div>
+        <div class="stat"><span class="stat-value fast">${speedup}x</span><span class="stat-label">Speedup</span></div>
+      `;
+
+      btn.disabled = false;
+      btn.textContent = 'Run Again';
+    });
+
+  </script>
+</body>
+</html>
