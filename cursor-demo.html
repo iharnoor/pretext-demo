@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Penetration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050510;
+      overflow: hidden;
+      cursor: none;
+      font-family: "Inter", system-ui, sans-serif;
+    }
+    canvas { display: block; }
+
+    #controls {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      z-index: 10;
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 10px 18px;
+      align-items: center;
+    }
+
+    #controls label {
+      color: rgba(255,255,255,0.4);
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #controls select, #controls input[type="range"] {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    input[type="range"] { accent-color: #7c6aff; width: 80px; }
+
+    .hint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(255,255,255,0.15);
+      font-size: 14px;
+      letter-spacing: 0.1em;
+      pointer-events: none;
+      transition: opacity 0.8s;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hint" id="hint">move your cursor</div>
+
+  <div id="controls">
+    <label>mode
+      <select id="mode">
+        <option value="repel">repel</option>
+        <option value="vortex">vortex</option>
+        <option value="explode">explode</option>
+        <option value="magnet">magnet</option>
+      </select>
+    </label>
+    <label>radius
+      <input type="range" id="radius" min="40" max="300" value="120" />
+    </label>
+    <label>force
+      <input type="range" id="force" min="1" max="30" value="12" />
+    </label>
+    <label>text
+      <select id="textSelect">
+        <option value="PRETEXT">PRETEXT</option>
+        <option value="HELLO WORLD">HELLO WORLD</option>
+        <option value="PENETRATE">PENETRATE</option>
+        <option value="HARNOOR">HARNOOR</option>
+        <option value="DISRUPTION">DISRUPTION</option>
+        <option value="SINGH IN USA">SINGH IN USA</option>
+      </select>
+    </label>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const hint = document.getElementById('hint');
+
+    let W, H, dpr;
+    let particles = [];
+    let mouse = { x: -9999, y: -9999, down: false };
+    let hasMoved = false;
+    let currentText = 'PRETEXT';
+
+    // ── Config ──
+    const config = {
+      mode: 'repel',
+      radius: 120,
+      force: 12,
+      friction: 0.85,
+      returnSpeed: 0.065,
+      particleGap: 3,
+    };
+
+    // ── Resize ──
+    function resize() {
+      dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.scale(dpr, dpr);
+      buildParticles(currentText);
+    }
+
+    // ── Build particles from text ──
+    function buildParticles(text) {
+      currentText = text;
+      particles = [];
+
+      // Measure text to pick font size that fills ~70% of screen width
+      const targetW = W * 0.7;
+      let fontSize = 200;
+      ctx.font = `900 ${fontSize}px "Inter", system-ui, sans-serif`;
+      let metrics = ctx.measureText(text);
+      while (metrics.width > targetW && fontSize > 40) {
+        fontSize -= 4;
+        ctx.font = `900 ${fontSize}px "Inter", system-ui, sans-serif`;
+        metrics = ctx.measureText(text);
+      }
+
+      // Draw text to offscreen canvas to sample pixels
+      const offscreen = document.createElement('canvas');
+      const octx = offscreen.getContext('2d');
+      const ow = Math.ceil(metrics.width) + 20;
+      const oh = Math.ceil(fontSize * 1.3);
+      offscreen.width = ow;
+      offscreen.height = oh;
+
+      octx.fillStyle = '#fff';
+      octx.font = `900 ${fontSize}px "Inter", system-ui, sans-serif`;
+      octx.textBaseline = 'top';
+      octx.fillText(text, 10, fontSize * 0.1);
+
+      const imageData = octx.getImageData(0, 0, ow, oh);
+      const data = imageData.data;
+      const gap = config.particleGap;
+
+      const offsetX = (W - ow) / 2;
+      const offsetY = (H - oh) / 2;
+
+      for (let y = 0; y < oh; y += gap) {
+        for (let x = 0; x < ow; x += gap) {
+          const i = (y * ow + x) * 4;
+          if (data[i + 3] > 128) {
+            particles.push({
+              homeX: offsetX + x,
+              homeY: offsetY + y,
+              x: offsetX + x,
+              y: offsetY + y,
+              vx: 0,
+              vy: 0,
+              // Color based on position for gradient effect
+              hue: 250 + (x / ow) * 60,
+              size: gap * 0.7 + Math.random() * 0.3,
+            });
+          }
+        }
+      }
+    }
+
+    // ── Mouse events ──
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      if (!hasMoved) {
+        hasMoved = true;
+        hint.style.opacity = '0';
+      }
+    });
+    window.addEventListener('mousedown', () => { mouse.down = true; });
+    window.addEventListener('mouseup', () => { mouse.down = false; });
+    window.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+
+    // Touch support
+    window.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      mouse.x = e.touches[0].clientX;
+      mouse.y = e.touches[0].clientY;
+      mouse.down = true;
+      if (!hasMoved) { hasMoved = true; hint.style.opacity = '0'; }
+    }, { passive: false });
+    window.addEventListener('touchend', () => { mouse.down = false; mouse.x = -9999; mouse.y = -9999; });
+
+    // ── Controls ──
+    document.getElementById('mode').addEventListener('change', (e) => { config.mode = e.target.value; });
+    document.getElementById('radius').addEventListener('input', (e) => { config.radius = +e.target.value; });
+    document.getElementById('force').addEventListener('input', (e) => { config.force = +e.target.value; });
+    document.getElementById('textSelect').addEventListener('change', (e) => { buildParticles(e.target.value); });
+    window.addEventListener('resize', resize);
+
+    // ── Custom cursor ──
+    function drawCursor() {
+      if (mouse.x < 0) return;
+      const r = config.radius;
+
+      // Glow
+      const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, r);
+      grad.addColorStop(0, 'rgba(124, 106, 255, 0.12)');
+      grad.addColorStop(0.5, 'rgba(124, 106, 255, 0.04)');
+      grad.addColorStop(1, 'rgba(124, 106, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ring
+      ctx.strokeStyle = 'rgba(124, 106, 255, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Crosshair dot
+      ctx.fillStyle = '#7c6aff';
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ── Animation loop ──
+    function animate() {
+      ctx.clearRect(0, 0, W, H);
+
+      const mx = mouse.x;
+      const my = mouse.y;
+      const radius = config.radius;
+      const radiusSq = radius * radius;
+      const strength = config.force;
+      const mode = config.mode;
+      const friction = config.friction;
+      const returnSpeed = config.returnSpeed;
+      const isDown = mouse.down;
+
+      for (let i = 0, len = particles.length; i < len; i++) {
+        const p = particles[i];
+        const dx = p.x - mx;
+        const dy = p.y - my;
+        const distSq = dx * dx + dy * dy;
+
+        if (distSq < radiusSq && mx > 0) {
+          const dist = Math.sqrt(distSq) || 1;
+          const factor = (1 - dist / radius) * strength * (isDown ? 2.5 : 1);
+
+          switch (mode) {
+            case 'repel': {
+              p.vx += (dx / dist) * factor;
+              p.vy += (dy / dist) * factor;
+              break;
+            }
+            case 'vortex': {
+              // Tangential + slight repulsion
+              p.vx += (-dy / dist) * factor * 0.8 + (dx / dist) * factor * 0.2;
+              p.vy += (dx / dist) * factor * 0.8 + (dy / dist) * factor * 0.2;
+              break;
+            }
+            case 'explode': {
+              // Strong burst with randomness
+              const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.5;
+              const burst = factor * 1.5;
+              p.vx += Math.cos(angle) * burst;
+              p.vy += Math.sin(angle) * burst;
+              break;
+            }
+            case 'magnet': {
+              // Pull toward cursor
+              p.vx -= (dx / dist) * factor * 0.6;
+              p.vy -= (dy / dist) * factor * 0.6;
+              break;
+            }
+          }
+        }
+
+        // Spring back to home
+        p.vx += (p.homeX - p.x) * returnSpeed;
+        p.vy += (p.homeY - p.y) * returnSpeed;
+
+        // Friction
+        p.vx *= friction;
+        p.vy *= friction;
+
+        // Integrate
+        p.x += p.vx;
+        p.y += p.vy;
+      }
+
+      // ── Draw particles ──
+      // Batch by similar color for fewer state changes
+      for (let i = 0, len = particles.length; i < len; i++) {
+        const p = particles[i];
+        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        const distFromHome = Math.sqrt((p.x - p.homeX) ** 2 + (p.y - p.homeY) ** 2);
+
+        // Color shifts based on displacement
+        let hue = p.hue;
+        let saturation = 60;
+        let lightness = 70;
+        let alpha = 0.9;
+
+        if (distFromHome > 2) {
+          hue += speed * 3;
+          saturation = Math.min(100, 60 + speed * 5);
+          lightness = Math.min(90, 70 + speed * 2);
+          alpha = Math.min(1, 0.9 + speed * 0.02);
+        }
+
+        ctx.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+      }
+
+      drawCursor();
+      requestAnimationFrame(animate);
+    }
+
+    // ── Init ──
+    resize();
+    animate();
+  </script>
+</body>
+</html>
